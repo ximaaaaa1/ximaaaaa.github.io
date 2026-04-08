@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Crypto Analyzer Pro</title>
+    <!-- Telegram WebApp -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- Font Awesome 6 (бесплатные иконки) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--tg-theme-bg-color, #0f0f1a);
+            color: var(--tg-theme-text-color, #ffffff);
+            padding: 16px;
+            padding-bottom: 80px;
+        }
+
+        /* Карточки */
+        .card {
+            background: var(--tg-theme-secondary-bg-color, #1e1e2a);
+            border-radius: 24px;
+            padding: 20px;
+            margin-bottom: 16px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            transition: transform 0.2s;
+        }
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            font-weight: 600;
+            font-size: 18px;
+        }
+        .card-header i {
+            font-size: 24px;
+            color: #4e9eff;
+        }
+        .value {
+            font-size: 28px;
+            font-weight: bold;
+            margin: 8px 0;
+        }
+        .change-positive { color: #00c853; }
+        .change-negative { color: #ff3b30; }
+
+        /* Кнопки */
+        .btn {
+            background: var(--tg-theme-button-color, #4e9eff);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 16px;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            width: 100%;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            margin-top: 8px;
+        }
+        .btn:active { opacity: 0.7; }
+        .btn-secondary {
+            background: rgba(78, 158, 255, 0.2);
+            color: #4e9eff;
+        }
+
+        /* Поле ввода */
+        .input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .input-group input {
+            flex: 1;
+            background: var(--tg-theme-secondary-bg-color, #2a2a36);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 16px;
+            padding: 14px;
+            color: var(--tg-theme-text-color, #fff);
+            font-size: 14px;
+        }
+        .input-group input:focus {
+            outline: none;
+            border-color: #4e9eff;
+        }
+
+        /* Таблица холдеров */
+        .holders-list {
+            margin-top: 12px;
+        }
+        .holder-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        .holder-rank {
+            width: 30px;
+            font-weight: bold;
+            color: #4e9eff;
+        }
+        .holder-address {
+            font-family: monospace;
+            font-size: 12px;
+            flex: 1;
+            margin-left: 12px;
+            word-break: break-all;
+        }
+        .holder-amount {
+            font-weight: bold;
+        }
+
+        /* Инсайдеры */
+        .insider-item {
+            background: rgba(78, 158, 255, 0.1);
+            border-radius: 16px;
+            padding: 12px;
+            margin-bottom: 8px;
+        }
+
+        /* График */
+        .chart-container {
+            margin: 16px 0;
+            height: 220px;
+        }
+
+        /* Прогноз */
+        .prediction-bar {
+            background: rgba(255,255,255,0.1);
+            border-radius: 20px;
+            height: 20px;
+            margin: 12px 0;
+            overflow: hidden;
+        }
+        .prediction-fill {
+            background: linear-gradient(90deg, #00c853, #ff3b30);
+            width: 0%;
+            height: 100%;
+            border-radius: 20px;
+            transition: width 0.5s;
+        }
+
+        /* Спиннер */
+        .loader {
+            text-align: center;
+            padding: 40px;
+        }
+        .fa-spinner {
+            font-size: 32px;
+            color: #4e9eff;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        /* Скрытие */
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+    <!-- Панель поиска -->
+    <div class="card" style="margin-bottom: 20px;">
+        <div class="input-group">
+            <input type="text" id="tokenAddress" placeholder="Введите адрес токена (0x...)" autocomplete="off">
+            <button class="btn" style="width: auto; padding: 0 24px;" onclick="analyzeToken()">
+                <i class="fas fa-search"></i>
+            </button>
+        </div>
+        <button class="btn btn-secondary" onclick="loadExample()">
+            <i class="fas fa-chart-line"></i> Пример: StakeStone (STO)
+        </button>
+    </div>
+
+    <!-- Контейнер для результатов -->
+    <div id="results" class="hidden"></div>
+
+    <!-- Загрузчик -->
+    <div id="loader" class="loader hidden">
+        <i class="fas fa-spinner"></i>
+        <p style="margin-top: 12px;">Загрузка данных...</p>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand(); // на весь экран
+        tg.enableClosingConfirmation();
+
+        // Функция для запроса данных через бота (используем отправку данных в бот)
+        async function analyzeToken() {
+            const address = document.getElementById('tokenAddress').value.trim();
+            if (!address.match(/^0x[a-fA-F0-9]{40}$/)) {
+                tg.showPopup({ title: 'Ошибка', message: 'Введите корректный адрес токена (0x... 42 символа)', buttons: [{ type: 'ok' }] });
+                return;
+            }
+
+            // Показываем загрузку
+            document.getElementById('loader').classList.remove('hidden');
+            document.getElementById('results').classList.add('hidden');
+            
+            // Отправляем запрос боту (WebApp может отправить данные боту, который ответит)
+            tg.sendData(JSON.stringify({ action: 'analyze', address: address }));
+            
+            // Так как ответ от бота придёт через событие нажатия кнопки в Mini App,
+            // мы должны заранее подписаться на событие.
+        }
+
+        // Функция для отображения полученных данных от бота
+        window.renderData = function(data) {
+            document.getElementById('loader').classList.add('hidden');
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '';
+            resultsDiv.classList.remove('hidden');
+
+            // Основная карточка с ценой и изменениями
+            const mainCard = document.createElement('div');
+            mainCard.className = 'card';
+            mainCard.innerHTML = `
+                <div class="card-header">
+                    <span><i class="fas fa-coins"></i> ${data.token.name} (${data.token.symbol})</span>
+                    <span style="font-size:12px; background:#4e9eff20; padding:4px 8px; border-radius:20px;">${data.token.chain.toUpperCase()}</span>
+                </div>
+                <div class="value">$${formatPrice(data.token.price)}</div>
+                <div style="display: flex; gap: 16px; margin-top: 8px;">
+                    <span>5м: <span class="${data.token.changes.m5 >= 0 ? 'change-positive' : 'change-negative'}">${data.token.changes.m5 >= 0 ? '+' : ''}${data.token.changes.m5.toFixed(1)}%</span></span>
+                    <span>1ч: <span class="${data.token.changes.h1 >= 0 ? 'change-positive' : 'change-negative'}">${data.token.changes.h1 >= 0 ? '+' : ''}${data.token.changes.h1.toFixed(1)}%</span></span>
+                    <span>6ч: <span class="${data.token.changes.h6 >= 0 ? 'change-positive' : 'change-negative'}">${data.token.changes.h6 >= 0 ? '+' : ''}${data.token.changes.h6.toFixed(1)}%</span></span>
+                    <span>24ч: <span class="${data.token.changes.h24 >= 0 ? 'change-positive' : 'change-negative'}">${data.token.changes.h24 >= 0 ? '+' : ''}${data.token.changes.h24.toFixed(1)}%</span></span>
+                </div>
+                <div style="margin-top: 16px; display: flex; justify-content: space-between;">
+                    <span>💧 Ликвидность: $${formatNumber(data.liquidity)}</span>
+                    <span>📊 Объём 24ч: $${formatNumber(data.volume)}</span>
+                </div>
+            `;
+            resultsDiv.appendChild(mainCard);
+
+            // График цены (псевдо-данные, можно заменить реальными)
+            const chartCard = document.createElement('div');
+            chartCard.className = 'card';
+            chartCard.innerHTML = `<div class="card-header"><i class="fas fa-chart-line"></i> График цены (последние 24ч)</div><canvas id="priceChart" height="180"></canvas>`;
+            resultsDiv.appendChild(chartCard);
+            
+            // Рисуем график (имитация, можно заменить реальными данными из API)
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array.from({length: 24}, (_,i) => `${i}:00`),
+                    datasets: [{
+                        label: 'Цена USD',
+                        data: Array.from({length: 24}, () => Math.random() * 0.5 + 0.1),
+                        borderColor: '#4e9eff',
+                        tension: 0.4,
+                        fill: false
+                    }]
+                },
+                options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { display: false } } }
+            });
+
+            // История пампов
+            const pumpsCard = document.createElement('div');
+            pumpsCard.className = 'card';
+            let pumpsHtml = `<div class="card-header"><i class="fas fa-fire"></i> История пампов (30 дней)</div><div style="font-size:12px;">`;
+            (data.pumps || []).slice(0, 10).forEach(p => {
+                pumpsHtml += `<div style="display:flex; justify-content:space-between; margin:8px 0;"><span>${p.time}</span><span class="${p.type === 'ПАМП' ? 'change-positive' : 'change-negative'}">${p.change}</span></div>`;
+            });
+            pumpsHtml += `</div>`;
+            pumpsCard.innerHTML = pumpsHtml;
+            resultsDiv.appendChild(pumpsCard);
+
+            // Инсайдеры
+            if (data.insiders && data.insiders.length) {
+                const insCard = document.createElement('div');
+                insCard.className = 'card';
+                let insHtml = `<div class="card-header"><i class="fas fa-whale"></i> Инсайдеры (крупные покупки за 5ч до пампа)</div>`;
+                data.insiders.forEach(ins => {
+                    insHtml += `<div class="insider-item">
+                        <div><b>$${formatNumber(ins.amount)}</b> (${ins.txCount} tx)</div>
+                        <div style="font-size:12px; color:#aaa;">${ins.time}</div>
+                        <div style="font-family:monospace; font-size:11px; word-break:break-all;">${ins.address}</div>
+                    </div>`;
+                });
+                insCard.innerHTML = insHtml;
+                resultsDiv.appendChild(insCard);
+            }
+
+            // Топ-холдеры
+            if (data.holders && data.holders.length) {
+                const holdersCard = document.createElement('div');
+                holdersCard.className = 'card';
+                let holdersHtml = `<div class="card-header"><i class="fas fa-users"></i> Топ-холдеры</div><div class="holders-list">`;
+                data.holders.forEach((h, idx) => {
+                    holdersHtml += `<div class="holder-item">
+                        <div class="holder-rank">${idx+1}</div>
+                        <div class="holder-address">${shortAddress(h.address)}</div>
+                        <div class="holder-amount">$${formatNumber(h.amount_usd)}</div>
+                    </div>`;
+                });
+                holdersHtml += `</div>`;
+                holdersCard.innerHTML = holdersHtml;
+                resultsDiv.appendChild(holdersCard);
+            }
+
+            // ML прогноз
+            const mlCard = document.createElement('div');
+            mlCard.className = 'card';
+            mlCard.innerHTML = `
+                <div class="card-header"><i class="fas fa-brain"></i> ML-прогноз пампа</div>
+                <div>Вероятность в ближайший час: <b>${data.ml_probability}%</b></div>
+                <div class="prediction-bar"><div class="prediction-fill" style="width: ${data.ml_probability}%;"></div></div>
+                <div>Рекомендация: ${data.ml_recommendation}</div>
+                <div style="margin-top:12px; font-size:12px; color:#aaa;">Факторы: активность китов, Buy/Sell ratio, история пампов, объём/ликвидность</div>
+            `;
+            resultsDiv.appendChild(mlCard);
+
+            // Кнопка "Открыть на DexScreener"
+            const dexBtn = document.createElement('button');
+            dexBtn.className = 'btn';
+            dexBtn.innerHTML = '<i class="fas fa-external-link-alt"></i> Открыть на DexScreener';
+            dexBtn.onclick = () => tg.openLink(data.dex_url);
+            resultsDiv.appendChild(dexBtn);
+        };
+
+        // Вспомогательные функции
+        function formatPrice(price) {
+            if (price < 0.01) return price.toFixed(8);
+            if (price < 1) return price.toFixed(4);
+            return price.toFixed(2);
+        }
+        function formatNumber(num) {
+            if (num >= 1e6) return (num/1e6).toFixed(2) + 'M';
+            if (num >= 1e3) return (num/1e3).toFixed(2) + 'K';
+            return num.toFixed(2);
+        }
+        function shortAddress(addr) {
+            if (!addr) return '';
+            return addr.slice(0,6) + '...' + addr.slice(-4);
+        }
+        function loadExample() {
+            document.getElementById('tokenAddress').value = '0xdAf1695c1dE162463c28686fE1eB72b03198cf07';
+            analyzeToken();
+        }
+
+        // Слушаем события от бота (если бот присылает данные через WebApp)
+        tg.onEvent('mainButtonClicked', () => {});
+        // Здесь можно реализовать получение данных через обратный вызов, но проще, чтобы бот сам отправлял сообщение в чат.
+        // Для Mini App лучше, чтобы бот отвечал на sendData и присылал JSON.
+        // В данном демо мы используем фиктивные данные для примера.
+        // В реальном проекте вы должны заменить вызов renderData на данные, полученные от вашего бота.
+        
+        // Для демонстрации – пример данных
+        setTimeout(() => {
+            if (document.getElementById('loader').classList.contains('hidden') === false) return;
+            // фиктивные данные
+            const mockData = {
+                token: { name: "StakeStone", symbol: "STO", chain: "BSC", price: 0.1395, changes: { m5: 0.0, h1: 0.0, h6: 3.1, h24: -9.9 } },
+                liquidity: 353270,
+                volume: 138110,
+                pumps: [{ time: "06.04 18:00", type: "ДАМП", change: "-6.1%" }, { time: "05.04 09:00", type: "ПАМП", change: "+7.6%" }],
+                insiders: [{ amount: 7240, txCount: 1, time: "04.04 04:57:10", address: "0x1a0a18ac4becddbd6389559687d1a73d8927e416" }],
+                holders: [{ address: "0x175d83b63114303c575059a26bd8b5f557475f6f", amount_usd: 28200000, share: 37.6 }],
+                ml_probability: 41,
+                ml_recommendation: "СЛАБЫЙ СИГНАЛ",
+                dex_url: "https://dexscreener.com/bsc/0x2ad2651A07b4949C0F892CFa27C3C73fb3b020f6"
+            };
+            // renderData(mockData); // раскомментировать для теста
+        }, 1000);
+    </script>
+</body>
+</html>
